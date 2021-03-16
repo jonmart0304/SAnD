@@ -171,7 +171,7 @@ class NeuralNetworkClassifier:
                     pbar.update(b_size)
 
                     self.optimizer.zero_grad()
-                    outputs = self.model(x)
+                    outputs,encoded_x = self.model(x)
                     loss = self.criterion(outputs, y)
                     loss.backward()
                     self.optimizer.step()
@@ -193,7 +193,7 @@ class NeuralNetworkClassifier:
                             x_val = x_val.to(self.device) if isinstance(x_val, torch.Tensor) else [i_val.to(self.device) for i_val in x_val]
                             y_val = y_val.to(self.device)
 
-                            val_output = self.model(x_val)
+                            val_output,encoded_x = self.model(x_val)
                             val_loss = self.criterion(val_output, y_val)
                             _, val_pred = torch.max(val_output, 1)
                             val_correct += (val_pred == y_val).sum().float().cpu().item()
@@ -227,21 +227,27 @@ class NeuralNetworkClassifier:
 
         self.model.eval()
         self.experiment.log_parameter("test_ds_size", len(loader.dataset))
-
+        x_list,y_list,outputs_list,encoded_list = [],[],[],[]
         with self.experiment.test():
             with torch.no_grad():
                 correct = 0.0
                 total = 0.0
-                for x, y in enumerate(loader):
+                count_batches = 0
+                for x, y in loader:
                     b_size = y.shape[0]
                     total += y.shape[0]
                     x = x.to(self.device) if isinstance(x, torch.Tensor) else [i.to(self.device) for i in x]
                     y = y.to(self.device)
-
+                    x_list.append(x)
+                    y_list.append(y)
+                    count_batches += 1
+                    
                     pbar.set_description("\033[32m"+"Evaluating"+"\033[0m")
                     pbar.update(b_size)
 
-                    outputs = self.model(x)
+                    outputs,encoded_x = self.model(x)
+                    encoded_list.append(encoded_x)
+                    outputs_list.append(outputs)
                     loss = self.criterion(outputs, y)
                     _, predicted = torch.max(outputs, 1)
                     correct += (predicted == y).sum().float().cpu().item()
@@ -252,12 +258,13 @@ class NeuralNetworkClassifier:
                     self.experiment.log_metric("loss", running_loss)
                     self.experiment.log_metric("accuracy", float(running_corrects / total))
                 pbar.close()
-            acc = self.experiment.get_metric("accuracy")
+            acc = self.experiment.get_metric("loss")/count_batches
 
-        print("\033[33m" + "Evaluation finished. " + "\033[0m" + "Accuracy: {:.4f}".format(acc))
+        print("\033[33m" + "Evaluation finished. " + "\033[0m" + "Loss: {:.4f}".format(acc))
 
         if verbose:
             return acc
+        return x_list,y_list,outputs_list,encoded_list
 
     def save_checkpoint(self) -> dict:
         """
